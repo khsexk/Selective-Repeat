@@ -2,14 +2,14 @@ import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
 import java.util.concurrent.Semaphore;
-import java.util.Hashtable;
+import java.util.HashMap;
 import java.util.Random;
 
 public class UDPServer {
 
 	static int timeOutDuration = 1000;
 	static final String FileNotFoundMsg = "Error: File Not Found"; // File이 없을 때
-	static final String OKMessage = "OK";
+	static final String OKMSG = "OK";
 	static final int chunkSize = 5; // 한번에 처리될 트랜잭션 단위 = 500 Byte (MSS)
 
 	// default configuration value
@@ -18,9 +18,9 @@ public class UDPServer {
 	static int dupACKcount = 0;	// 중복 ACK
 	static int ssthreash = 5;
 
-	static boolean ackPackets[];
-	static int currentPackNo = 0; // next packet to be sent
-	static Hashtable<Integer, Thread> hashTimers; // save active timers
+	static boolean ackPackets[];	// 각 패킷에 대한 Index별 Ack
+	static int currentPackNo = 0;	// next packet to be sent
+	static HashMap<Integer, Thread> hashTimers; // 패킷의 순서번호에 따른 타이머 해쉬맵
 	static byte[] fileContent;	// Client 요청에 따라 송신할 File
 	static int numberOfPackets;	// 패킷 수
 	static Semaphore mutex;		// Mutex 세마포어
@@ -37,23 +37,23 @@ public class UDPServer {
 		byte[] buf = new byte[1000];
 		
 		/* UDP 소켓과 패킷 생성 (초기화X) */
-		DatagramSocket udpSocket;
+		DatagramSocket udpServer;
 		DatagramPacket dataPacket;
 		
 		try {
 			printBanner();
 			
 			/* Server Open */
-			udpSocket = new DatagramSocket(PORT);
+			udpServer = new DatagramSocket(PORT);
 			System.out.println("  🖥 UDP Server Starts!");
 			
 			while(true) {
 				/* Client의 접속을 기다리는중 */
-				System.out.println("  Waiting for Client Request ...");
+				System.out.println("  Waiting for Client Request ...\n");
 				
 				/* 접속한 Client가 보낸 File 명을 DatagramPacket을 통해 recv */
 				dataPacket = new DatagramPacket(buf, buf.length);
-				udpSocket.receive(dataPacket);
+				udpServer.receive(dataPacket);
 
 				/* 접속한 Client의 주소, 포트와 요청한 파일 이름 출력 */
 				String filename = new String(dataPacket.getData(), 0, dataPacket.getLength());
@@ -72,13 +72,16 @@ public class UDPServer {
 					fileContent = Files.readAllBytes(file.toPath());
 					System.out.println("│───────File size: " + fileContent.length + " Byte───────│");
 					System.out.println("└────────────────────────────────┘\n");
+					System.out.println("**********************************");
+					System.out.println("**********************************");
+					System.out.println("              전송시작!             \n");
 				} catch (FileNotFoundException e) {
-					sendMsgToClient(FileNotFoundMsg, udpSocket, dataPacket);
+					sendMsgToClient(FileNotFoundMsg, udpServer, dataPacket);
 					continue;
 				}
 
-				/* send file using stop and wait strategy */
-				sendFileToClient(fileContent, dataPacket, udpSocket);
+				/* Selective Repeat 접근 방식을 사용하여 File 전송 */
+				selctiveRepeatARQ(fileContent, dataPacket, udpServer);
 
 				System.out.println("  file is sent");
 			}	// while
@@ -104,30 +107,35 @@ public class UDPServer {
 		System.out.println("**********************************\n");
 	}
 	
-	/* 손실이 일어날 확률 결정 Method */
-	private static boolean lossSim() {
-		int n = rand.nextInt(10); // n ==> 0...9
-
-		// 30% 확률로 손실 발생
-		if (n > 2)
-			return true;
-
-		return false;
+	/* Client에게 Message 전송 */
+	public static void sendMsgToClient(String s, DatagramSocket socket, DatagramPacket datapacket) {
+		/* String형의 메세지를 byte형식으로 바꿔서 byte 배열에 저장 */
+		byte[] buf = new byte[1000];
+		buf = s.getBytes();
+		
+		DatagramPacket out = new DatagramPacket(buf, buf.length, datapacket.getAddress(), datapacket.getPort());
+		
+		try {
+			socket.send(out);
+		} catch (IOException e) {
+			System.out.println("  메세지 전송 실패");
+			e.printStackTrace();
+		}
 	}
 
-	/* selective repeat 접근 방식을 사용하여 File 전송 Method */
-	public static void sendFileToClient(byte[] fileContent, DatagramPacket dgp, DatagramSocket sk) {
+	/* selective repeat 접근 방식 */
+	public static void selctiveRepeatARQ(byte[] fileContent, DatagramPacket dgp, DatagramSocket sk) {
 		numberOfPackets = (int) Math.ceil(fileContent.length / chunkSize);	// 패킷의 갯수 결정
 		ackPackets = new boolean[numberOfPackets];	// 패킷의 갯수만큼 Ack 배열 생성
 		cwnd = 1;
 		currentPackNo = 0;	// 최근에 전송한 패킷 번호
 		ssthreash = chunkSize;
-		hashTimers = new Hashtable<Integer, Thread>();
+		hashTimers = new HashMap<Integer, Thread>();	// Timer 생성
 
-		// send ok message with number of packets
-		sendMsgToClient(OKMessage + " " + numberOfPackets, sk, dgp);
+		/* 패킷의 총 갯수와 파일을 찾았고 전송을 시작하겠다는 OK 메시지 전송 */
+		sendMsgToClient(OKMSG + " " + numberOfPackets, sk, dgp);
 
-		// send packet no. 1
+		// 첫 번째(0) 패킷 전송
 		sendNewPackets(dgp, sk);
 
 		while (true) {
@@ -146,7 +154,7 @@ public class UDPServer {
 				mutex.acquire();
 				// System.out.println("acqiure mutex: ");
 
-				// check if duplicate
+				/* 중복 ACK인지 확인 */
 				if (isDuplicateAck(packet)) {
 					dupACKcount++;
 					System.out.println("  duplicat ack: " + packet.ackno);
@@ -181,7 +189,108 @@ public class UDPServer {
 			}
 		}
 	}
+	
+	/* 파이프라인 방식으로 패킷 전송 메서드 */
+	public static void sendNewPackets(DatagramPacket dataPacket, DatagramSocket socket) {
+		System.out.println("💌💌💌💌💌 Pipe Line Start 💌💌💌💌💌\n");
+		for (int i = 0; i < cwnd; i++) {
+			/* 보낼 패킷의 순서번호가 패킷의 수 이상일 때 모두 전송된 것이므로 return */
+			if (currentPackNo >= numberOfPackets)	
+				return;
+			
+			/* 패킷 매핑 메서드 호출 */
+			System.out.println("┌────────── Send Packet ─────────┐");
+			sendPacket(dataPacket, socket, currentPackNo);
 
+			/* Timer 객체를 상속받아 만든 Timer를 패킷 순서번호에 따라 생성하고, 해쉬에 삽입 */
+			Timer timer = new Timer(currentPackNo, dataPacket, socket, timeOutDuration);
+			hashTimers.put(currentPackNo, timer);
+			
+			/* 타이머 시작 */
+			timer.start();
+
+			// 패킷을 선송했으므로 패킷 순서번호 1만큼 증가
+			currentPackNo++;
+		}
+		System.out.println("💌💌💌💌 Pipe Line Finish 💌💌💌💌💌\n");
+	}
+	
+	/* 패킷과 순서번호로 Packet 생성 및 send()를 포함한 메서드 sendObjectToClient() 호출 */
+	public static void sendPacket(DatagramPacket dataPacket, DatagramSocket socket, int packetNo) {
+		sb = new StringBuilder();
+		int size;
+		
+		/* 마지막 패킷일 경우 if문, 아닐 경우 else문에 들어가 전송할 패킷의 size 결정 */
+		if (packetNo * chunkSize + chunkSize > fileContent.length)
+			size = fileContent.length - packetNo * chunkSize;
+		else
+			size = chunkSize;
+
+		sb.append("│─────────── Seq No: ").append(packetNo).append(" ──────────│\n");
+		sb.append("│────────── Size: ").append(size).append("Byte ─────────│\n");
+		sb.append("└────────────────────────────────┘");
+		System.out.println(sb.toString());
+		System.out.println("           From " + (packetNo * chunkSize) + " To " + (packetNo * chunkSize + size) + "\n");
+		
+		/* 전송할 패킷을 byte 배열에 저장 */
+		byte[] part = new byte[size];
+		System.arraycopy(fileContent, packetNo * chunkSize, part, 0, size);
+
+		DataPacket packet = new DataPacket(part, size, packetNo);
+		
+		/* lossPacket() 메서드를 통해 30% 확률로 패킷 손실 발생 → Server는 모름 */
+		if (lossPacket())
+			sendObjectToClient(packet, dataPacket.getAddress(), dataPacket.getPort(), socket);
+		else
+			System.out.println("      (😰 " + packetNo + "번 Packet 손실 😰)");
+	}
+	
+	/* 손실이 일어날 확률 결정 메서드 */
+	private static boolean lossPacket() {
+		int n = rand.nextInt(10); // 0 ≤ n ≤ 9
+
+		// 20% 확률로 손실 발생
+		if (n > 1)
+			return true;
+
+		return false;
+	}
+	
+	/* 패킷 전송 메서드 */
+	public static void sendObjectToClient(Object o, InetAddress address, int desPort, DatagramSocket dataSocket) {
+		try {
+			/* 패킷 데이터 직렬화를 위해 ByteArrayOutputStream과 ObjectOutputStream 사용*/
+			ByteArrayOutputStream byteStream = new ByteArrayOutputStream(5000);
+			ObjectOutputStream os = new ObjectOutputStream(new BufferedOutputStream(byteStream));
+			
+			os.flush();
+			os.writeObject(o);
+			os.flush();
+			
+			/* ByteArrayOutputStream을 Byte 배열에 담고, 배열을 패킷에 담음 
+			 * 패킷 전송
+			 */
+			byte[] sendBuf = byteStream.toByteArray();
+			DatagramPacket packet = new DatagramPacket(sendBuf, sendBuf.length, address, desPort);
+			dataSocket.send(packet);
+			
+			os.close();
+		} catch (UnknownHostException e) {
+			System.err.println("  Exception:  " + e);
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/* 중복 ACK인지 판별하는 메서드 */
+	public static boolean isDuplicateAck(AckPacket ackPacket) {
+		if (ackPackets[ackPacket.ackno])
+			return true;
+		return false;
+	}
+
+	/* 누적 ACK에 대한 ACK 배열 메서드 */
 	private static void ackAllPacketsBefore(int ackno) {
 		int i = ackno;
 
@@ -199,6 +308,9 @@ public class UDPServer {
 
 		Timer timer = new Timer(ackno + 1, dgp, sk, timeOutDuration);
 		hashTimers.put(ackno + 1, timer);
+		
+		System.out.println("┌────     Re-Send Packet     ────┐");
+		System.out.println("│──── Because Of Packet Loss ────│");
 		sendPacket(dgp, sk, ackno + 1);
 		timer.start();
 	}
@@ -209,8 +321,8 @@ public class UDPServer {
 		}
 	}
 
+	/* TimeOut 발생 */
 	public static void handleTimeOut(int packetNo, DatagramPacket dgp, DatagramSocket sk) {
-
 		try {
 			System.out.println("  handle time out: " + packetNo);
 			mutex.acquire();
@@ -220,7 +332,9 @@ public class UDPServer {
 			ssthreash = cwnd / 2;
 			cwnd = 1;
 			dupACKcount = 0;
-
+			
+			System.out.println("┌──────   Re-Send Packet   ──────┐");
+			System.out.println("│────── Because Of TimeOut ──────│");
 			sendPacket(dgp, sk, packetNo);
 
 			mutex.release();
@@ -231,46 +345,7 @@ public class UDPServer {
 		}
 	}
 
-	// send packet with packetNo
-	public static void sendPacket(DatagramPacket dgp, DatagramSocket sk, int packetNo) {
-		int size;
-		if (packetNo * chunkSize + chunkSize > fileContent.length)
-			size = fileContent.length - packetNo * chunkSize;
-		else
-			size = chunkSize;
 
-		System.out.printf("  send %d from %d, size %d\n", packetNo, packetNo * chunkSize, size);
-
-		byte[] part = new byte[size];
-		System.arraycopy(fileContent, packetNo * chunkSize, part, 0, size);
-
-		DataPacket packet = new DataPacket(part, size, packetNo);
-
-		if (lossSim())
-			sendObjectToClient(packet, dgp.getAddress(), dgp.getPort(), sk);
-		else
-			System.out.println("  packet is not sent: " + packetNo);
-	}
-
-	// send cwnd packets where
-	public static void sendNewPackets(DatagramPacket dgp, DatagramSocket sk) {
-
-		for (int i = 0; i < cwnd; i++) {
-
-			if (currentPackNo >= numberOfPackets)
-				return;
-
-			sendPacket(dgp, sk, currentPackNo);
-
-			// create thread timeout and put in hashtable
-			Timer timer = new Timer(currentPackNo, dgp, sk, timeOutDuration);
-			hashTimers.put(currentPackNo, timer);
-			timer.start();
-
-			// increase currentPacketNo
-			currentPackNo++;
-		}
-	}
 
 	// wait for ack
 	// it is a blocking function
@@ -282,15 +357,10 @@ public class UDPServer {
 				AckPacket ack = (AckPacket) recievedObj;
 				return ack;
 			} catch (Exception e) {
+				;
 			}
 		}
 		return null;
-	}
-
-	public static boolean isDuplicateAck(AckPacket ackPacket) {
-		if (ackPackets[ackPacket.ackno])
-			return true;
-		return false;
 	}
 
 	public static Object recvObjFrom(DatagramSocket dSock) {
@@ -317,18 +387,7 @@ public class UDPServer {
 		return (null);
 	}
 	
-	// Client에게 Message 전송
-	public static void sendMsgToClient(String s, DatagramSocket sk, DatagramPacket dgp) {
-		byte[] buf = new byte[1000];
-		buf = s.getBytes();
-		DatagramPacket out = new DatagramPacket(buf, buf.length, dgp.getAddress(), dgp.getPort());
-		try {
-			sk.send(out);
-		} catch (IOException e) {
-			System.out.println("  Cannot send response to client");
-			e.printStackTrace();
-		}
-	}
+
 
 	public static void scanAndSend() {
 		byte[] buf = new byte[1000];
@@ -356,27 +415,5 @@ public class UDPServer {
 			e.printStackTrace();
 		}
 
-	}
-
-	public static void sendObjectToClient(Object o, InetAddress address, int desPort, DatagramSocket dSock) {
-		try {
-			// DatagramSocket dSock = new DatagramSocket(PORT);
-			ByteArrayOutputStream byteStream = new ByteArrayOutputStream(5000);
-			ObjectOutputStream os = new ObjectOutputStream(new BufferedOutputStream(byteStream));
-			os.flush();
-			os.writeObject(o);
-			os.flush();
-			// retrieves byte array
-			byte[] sendBuf = byteStream.toByteArray();
-			DatagramPacket packet = new DatagramPacket(sendBuf, sendBuf.length, address, desPort);
-			int byteCount = packet.getLength();
-			dSock.send(packet);
-			os.close();
-		} catch (UnknownHostException e) {
-			System.err.println("  Exception:  " + e);
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 	}
 }

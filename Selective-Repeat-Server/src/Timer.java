@@ -15,19 +15,15 @@ public class Timer extends Thread {
 	}
 
 	public void run() {
-
 		try {
 			while (true) {
-
 				Thread.sleep(timeOutDuration);
-
 				// call time out function
 				UDPServer.handleTimeOut(packetNo, dgp, sk);
 			}
 		} catch (InterruptedException e) {
 			// e.printStackTrace();
 			System.out.println("  🔪 Kill timer of packet: " + packetNo);
-			
 		}
 	}
 }
