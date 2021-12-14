@@ -20,15 +20,14 @@ public class UDPServer {
 
 	// default configuration value
 	static int PORT = 9999;	// Server Port Number
-	static int cwnd = 1;
-	static int dupACKcount = 0;	// 중복 ACK
-	static int ssthreash = 5;
+	static int pipeLine = 4;
 	
-	static int pipeLineNum = 3;
-	static int window = 4;
-	static int base = 0;
+	static int makingError = 1;
+	static int pipeLineNum = 4;
+	static int windowMax = 3;
+	static int sendNum = 0;
 
-	static boolean ackPackets[];	// 각 패킷에 대한 Index별 Ack
+	static boolean[] ackPackets;	// 각 패킷에 대한 Index별 수신한 Ack 배열
 	static int currentPackNo = 0;	// next packet to be sent
 	static HashMap<Integer, Thread> hashTimers; // 패킷의 순서번호에 따른 타이머 해쉬맵
 	static byte[] fileContent;	// Client 요청에 따라 송신할 File
@@ -151,9 +150,7 @@ public class UDPServer {
 	public static void selctiveRepeatARQ(byte[] fileContent, DatagramPacket dgp, DatagramSocket sk) {
 		numberOfPackets = (int) Math.ceil(fileContent.length / chunkSize);	// 패킷의 갯수 결정
 		ackPackets = new boolean[numberOfPackets];	// 패킷의 갯수만큼 Ack 배열 생성
-		cwnd = 1;
 		currentPackNo = 0;	// 최근에 전송한 패킷 번호
-		ssthreash = chunkSize;
 		hashTimers = new HashMap<Integer, Thread>();	// Timer 생성
 
 		/* 패킷의 총 갯수와 파일을 찾았고 전송을 시작하겠다는 OK 메시지 전송 */
@@ -166,58 +163,36 @@ public class UDPServer {
 			AckPacket packet = getAck(sk);
 			System.out.println("  Ack recieved");
 
-			// stoping condition
-			if (packet.ackno == numberOfPackets - 1) {
-				System.out.println("<<<<<<< new ack: " + packet.ackno);
-				System.out.println("파일 전송이 완료되어 남은 타이머를 모두 제거합니다.");
-				killTimers();
-				return;
-			}
-
 			// ack is received
 			try {
 				mutex.acquire();
-				// System.out.println("acqiure mutex: ");
 
-				/* 중복 ACK인지 확인 */
-				if (isDuplicateAck(packet)) {
-					dupACKcount++;
-					System.out.println("<<<<<<< 중복 ACK 수신: " + packet.ackno);
-					if (dupACKcount == 3) {
-						ssthreash = cwnd / 2;
-						cwnd = ssthreash + 3;
-						re_SendPacket(dgp, sk, packet.ackno);
-					} else if (dupACKcount > 3) {
-						cwnd++;
-						sendNewPackets(dgp, sk);
-					}
-				} else {
-					System.out.println("<<<<<<< new ack: " + packet.ackno);
+				System.out.println("<<<<<<< new ack: " + packet.ackno);
 
-					dupACKcount = 0;
 
-					ackAllPacketsBefore(packet.ackno);
+				saveAck(packet.ackno);
 					
 					//
-					for(int i=0 ; i<ackPackets.length ; i++) {
-						if(ackPackets[i] == false) break;
-						if(base < 5)
-							base++;
-					}
-					if(packet.ackno > 4) 
-						printBuf(5);
-					else
-						printBuf(packet.ackno + 1);
-					//
-					
-					if (dupACKcount >= 3) {
-						cwnd = ssthreash;
-					} else {
-						cwnd++;
-						sendNewPackets(dgp, sk);
-					}
+				int dynamicWindow = windowControl(ackPackets);
+				if (dynamicWindow > 4) { 
+					printBuf(5); 
+					windowMax = 8;
+				} 
+				else { 
+					printBuf(dynamicWindow);
+					windowMax = dynamicWindow + 3;
 				}
 
+				sendNewPackets(dgp, sk);
+				
+				/* 모든 패킷에 대한 ACK를 받았을 때 타이머 모두 제거 */
+				if (windowControl(ackPackets) == 9) {
+					System.out.println("<<<<<<< new ack: " + packet.ackno);
+					System.out.println("파일 전송이 완료되어 남은 타이머를 모두 제거합니다.");
+					killTimers();
+					return;
+				}
+				
 				mutex.release();
 				// System.out.println("release mutex: ");
 			} catch (InterruptedException e) {
@@ -228,9 +203,17 @@ public class UDPServer {
 	
 	/* 파이프라인 방식으로 패킷 전송 메서드 */
 	public static void sendNewPackets(DatagramPacket dataPacket, DatagramSocket socket) {
-		for (int i = 0; i < cwnd; i++) {
+		for (int i = 0; i < pipeLine; i++) {
 			/* 보낼 패킷의 순서번호가 패킷의 수 이상일 때 모두 전송된 것이므로 return */
 			if (currentPackNo >= numberOfPackets)	
+				return;
+			
+			/* Server의 sender window가 가득 찬 경우 */
+			if(sendNum == 4) 
+				return;
+			
+			/* Server의 sender window 밖의 패킷 전송 제한 */
+			if(currentPackNo > windowMax)
 				return;
 			
 			/* 패킷 매핑 메서드 호출 */
@@ -243,7 +226,7 @@ public class UDPServer {
 			
 			/* 타이머 시작 */
 			timer.start();
-
+			sendNum++;
 			// 패킷을 선송했으므로 패킷 순서번호 1만큼 증가
 			currentPackNo++;
 		}
@@ -268,12 +251,18 @@ public class UDPServer {
 
 		DataPacket packet = new DataPacket(part, size, packetNo);
 		
-		/* lossPacket() 메서드를 통해 30% 확률로 패킷 손실 발생 → Server는 모름 */
-		if (lossPacket())
+		
+		
+		/* lossPacket() 메서드를 통해 20% 확률로 패킷 손실 발생 → Server는 모름 */
+		/*if (lossPacket()) */
+		if(packetNo != 2 || makingError==0) 
 			sendObjectToClient(packet, dataPacket.getAddress(), dataPacket.getPort(), socket);
-		else
+		
+		else {
 			System.out.println("                                         "
 					+ "                                         Warning: "+packetNo + "번 패킷 손실");
+			makingError = 0;
+		}
 	}
 	
 	/* 손실이 일어날 확률 결정 메서드 */
@@ -313,42 +302,17 @@ public class UDPServer {
 			e.printStackTrace();
 		}
 	}
-	
-	/* 중복 ACK인지 판별하는 메서드 */
-	public static boolean isDuplicateAck(AckPacket ackPacket) {
-		if (ackPackets[ackPacket.ackno])
-			return true;
-		return false;
-	}
 
 	/* 누적 ACK에 대한 ACK 배열 메서드 */
-	private static void ackAllPacketsBefore(int ackno) {
-		int i = ackno;
-
-		while ( i >= 0 && !ackPackets[i]) {
-			ackPackets[i] = true;
-			// kill its timer
-			Thread t = hashTimers.remove(i);
-			t.interrupt();
-			i--;
-		}
-	}
-	
-	/*  */
-	private static void re_SendPacket(DatagramPacket dgp, DatagramSocket sk, int ackno) {
-		hashTimers.remove(ackno + 1).interrupt();
-
-		Timer timer = new Timer(ackno + 1, dgp, sk, timeOutDuration);
-		hashTimers.put(ackno + 1, timer);
+	private static void saveAck(int ackno) {
+		ackPackets[ackno] = true;
 		
-		System.out.println(">>>>>>> Re-Send Packet: " + (ackno + 1));
-		System.out.println(">>>>>>> 이유: 데이터 패킷 손실");
-		sendPacket(dgp, sk, ackno + 1);
-		timer.start();
-		System.out.println(">>>>>>> "+ (ackno + 1) + "번 타이머 시작");
+		// kill its timer
+		Thread t = hashTimers.remove(ackno);
+		t.interrupt();
 	}
 	
-	/*  */
+	/* 전송 후 남아있는 Timer를 모두 제거하는 메서드 */
 	private static void killTimers() {
 		for (Integer x : hashTimers.keySet()) {
 			hashTimers.get(x).interrupt();
@@ -362,10 +326,7 @@ public class UDPServer {
 					+ "                                         Warning: " + packetNo + "번 타이머 TimeOut");
 			
 			mutex.acquire();
-			ssthreash = cwnd / 2;
-			cwnd = 1;
-			dupACKcount = 0;
-			
+
 			System.out.println(">>>>>>> Re-Send Packet: " + packetNo);
 			System.out.println(">>>>>>> 이유: TimeOut");
 			sendPacket(dgp, sk, packetNo);
@@ -384,6 +345,7 @@ public class UDPServer {
 		if (recievedObj != null) {
 			try {
 				AckPacket ack = (AckPacket) recievedObj;
+				sendNum--;
 				return ack;
 			} catch (Exception e) {
 				;
@@ -419,7 +381,27 @@ public class UDPServer {
 		return (null);
 	}
 	
+	public static int windowControl(boolean[] ackPackets) {
+		int num = 0;
+		
+		for(int i=0 ; i<ackPackets.length ; i++) {
+			if(ackPackets[i] == false) { return num; }
+			else { num++; }
+		}
+		return num;
+	}
 	
+	public static int remainInWindow(boolean[] ackPackets) {
+		int use = 0;
+		
+		for(int i=windowMax-3 ; i<=windowMax ; i++) {
+			//if(ackPackets[i] == true)
+		}
+		
+		windowMax = pipeLineNum-use;
+		
+		return windowMax;
+	}
 	
 	
 	
