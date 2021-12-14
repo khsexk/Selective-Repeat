@@ -5,6 +5,12 @@ import java.util.concurrent.Semaphore;
 import java.util.HashMap;
 import java.util.Random;
 
+/*
+ * 		2021년도 2학기 컴퓨터 네트워크
+ * 		지도교수: 정의훈 교수님
+ * 		과제 제출자: 2017154003 고현석
+ */
+
 public class UDPServer {
 
 	static int timeOutDuration = 1000;
@@ -77,7 +83,11 @@ public class UDPServer {
 					System.out.println("**********************************");
 					System.out.println("**********************************");
 					System.out.println("              전송시작!             \n");
+					System.out.println("**********************************");
+					System.out.println("**********************************");
 				} catch (FileNotFoundException e) {
+					System.out.println(">>> 초기 버퍼");
+					printBuf(0);
 					sendMsgToClient(FileNotFoundMsg, udpServer, dataPacket);
 					continue;
 				}
@@ -93,6 +103,15 @@ public class UDPServer {
 			e.printStackTrace();
 		}
 	}
+	
+	
+	
+	/*
+	 * 		↑  Main and Global Variable Part
+	 * 
+	 * 		↓  Method Part
+	*/
+	
 	
 	/* 프로그램 시작 전, 배너 출력 Method */
 	public static void printBanner() {
@@ -304,7 +323,8 @@ public class UDPServer {
 			i--;
 		}
 	}
-
+	
+	/*  */
 	private static void sendMissingPacket(DatagramPacket dgp, DatagramSocket sk, int ackno) {
 		hashTimers.remove(ackno + 1).interrupt();
 
@@ -316,7 +336,8 @@ public class UDPServer {
 		sendPacket(dgp, sk, ackno + 1);
 		timer.start();
 	}
-
+	
+	/*  */
 	private static void killTimers() {
 		for (Integer x : hashTimers.keySet()) {
 			hashTimers.get(x).interrupt();
@@ -347,10 +368,7 @@ public class UDPServer {
 		}
 	}
 
-
-
-	// wait for ack
-	// it is a blocking function
+	/*  */
 	public static AckPacket getAck(DatagramSocket dSock) {
 		Object recievedObj = recvObjFrom(dSock);
 
@@ -364,14 +382,15 @@ public class UDPServer {
 		}
 		return null;
 	}
-
+	
+	/*  */
 	public static Object recvObjFrom(DatagramSocket dSock) {
 		try {
 			// DatagramSocket dSock = new DatagramSocket(PORT);
 			byte[] recvBuf = new byte[5000];
 			DatagramPacket packet = new DatagramPacket(recvBuf, recvBuf.length);
 			dSock.receive(packet);
-			int byteCount = packet.getLength();
+
 			ByteArrayInputStream byteStream = new ByteArrayInputStream(recvBuf);
 			ObjectInputStream is = new ObjectInputStream(new BufferedInputStream(byteStream));
 			Object o = is.readObject();
@@ -387,5 +406,26 @@ public class UDPServer {
 			e.printStackTrace();
 		}
 		return (null);
+	}
+	
+	
+	
+	
+	
+	/*
+	 *  UI 관련 메서드
+	 *  윈도우 크기는 4로 가정 ( 패킷 순서번호(8) / 2 ) 
+	 */
+	static void printBuf(int base) {
+	      System.out.println("┌───────────────────────────────────┐");
+	      System.out.println("│ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │");
+	      System.out.println("└───────────────────────────────────┘");
+	      
+	      if(base > 0) {
+	          for(int i=0; i<base; i++) {
+	        	  System.out.print("    ");
+	          }
+	      }
+	      System.out.println("└───────────────┘\n");
 	}
 }
