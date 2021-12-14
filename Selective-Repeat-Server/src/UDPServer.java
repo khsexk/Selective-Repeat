@@ -14,6 +14,8 @@ public class UDPServer {
 
 	// default configuration value
 	static int PORT = 9999;	// Server Port Number
+	static int pipeLineNum = 3;
+	static int window = 4;
 	static int cwnd = 1;
 	static int dupACKcount = 0;	// 중복 ACK
 	static int ssthreash = 5;
