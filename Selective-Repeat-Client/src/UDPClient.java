@@ -15,7 +15,12 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.HashMap;
-import java.util.Hashtable;
+
+/*
+ * 		2021년도 2학기 컴퓨터 네트워크
+ * 		지도교수: 정의훈 교수님
+ * 		과제 제출자: 2017154003 고현석
+ */
 
 public class UDPClient {
 
@@ -87,7 +92,14 @@ public class UDPClient {
 		}
 
 	}
-
+	
+	/*
+	 * 		↑  Main and Global Variable Part
+	 * 
+	 * 		↓  Method Part
+	*/
+	
+	/* 서버로부터 Selective Repeat 접근 방식으로 File을 받는 메서드 */
 	public static void receiveFileFromServer(String filename, int numberOfPackets, DatagramSocket udpSocket, DatagramPacket dgp) {
 		/* 서버로부터 받을 패킷의 순서번호에 따라 저장할 HashMap 초기화 */
 		hashPackets = new HashMap<Integer, DataPacket>();
