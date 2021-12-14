@@ -68,7 +68,7 @@ public class UDPClient {
 					System.out.println(">>> 초기 버퍼");
 					printBuf(base);
 					/* 서버로부터 File recv 시작 */
-					receiveFileFromSrever(filename, numberOfPackets, udpSocket, out);
+					receiveFileFromServer(filename, numberOfPackets, udpSocket, out);
 				} 
 				/* 메세지를 인식하지 못할 떄 */
 				else {
@@ -88,7 +88,7 @@ public class UDPClient {
 
 	}
 
-	public static void receiveFileFromSrever(String filename, int numberOfPackets, DatagramSocket udpSocket, DatagramPacket dgp) {
+	public static void receiveFileFromServer(String filename, int numberOfPackets, DatagramSocket udpSocket, DatagramPacket dgp) {
 		/* 서버로부터 받을 패킷의 순서번호에 따라 저장할 HashMap 초기화 */
 		hashPackets = new HashMap<Integer, DataPacket>();
 
@@ -109,7 +109,7 @@ public class UDPClient {
 					if (currentPacket != 0) {
 						System.out.println("send ack: " + (currentPacket - 1));
 						ackPacket = new AckPacket(0, currentPacket - 1);
-						sendObjectToServer(ackPacket, dgp.getAddress(), dgp.getPort(), udpSocket);
+						sendAckToServer(ackPacket, dgp.getAddress(), dgp.getPort(), udpSocket);
 						
 						/* UI 출력 파트 */
 						if(currentPacket > 4) {
@@ -118,12 +118,13 @@ public class UDPClient {
 							printBuf(currentPacket);
 						}
 						
-					}
+					}	
+					
 					/* 서버로부터 패킷 recv */
-					packet = (DataPacket) recvObjFrom(udpSocket); 
+					packet = (DataPacket) recvPacketFromServer(udpSocket); 
 					System.out.println("recieved packet: " + packet.seqno);
 					
-					if (packet.seqno == (currentPacket)) {
+					if (packet.seqno == currentPacket) {
 						currentPacket++;
 						fos.write(packet.data);
 					} 
@@ -134,12 +135,11 @@ public class UDPClient {
 				}
 			}	// while
 			fos.close();
-			// send ack of last packet
+			/* 마지막 패킷에 대한 ACK 전송 */
 			System.out.println("send ack: " + (numberOfPackets - 1));
 			printBuf(5);
 			ackPacket = new AckPacket(0, numberOfPackets - 1);
-			sendObjectToServer(ackPacket, dgp.getAddress(), dgp.getPort(), udpSocket);
-
+			sendAckToServer(ackPacket, dgp.getAddress(), dgp.getPort(), udpSocket);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
@@ -147,19 +147,22 @@ public class UDPClient {
 		}
 
 	}
-
-	public static void sendObjectToServer(Object o, InetAddress address, int desPort, DatagramSocket dSock) {
+	/* 서버로 ACK Data 전송 메서드 */
+	public static void sendAckToServer(Object ackPacket, InetAddress address, int desPort, DatagramSocket udpSocket) {
 		try {
+			/* ACK 패킷 직렬화를 위해 ByteArrayOutputStream과 ObjectOutputStream 사용 */
 			ByteArrayOutputStream byteStream = new ByteArrayOutputStream(5000);
 			ObjectOutputStream os = new ObjectOutputStream(new BufferedOutputStream(byteStream));
 			os.flush();
-			os.writeObject(o);
+			os.writeObject(ackPacket);
 			os.flush();
-			// retrieves byte array
+			
+			/* ByteArrayOutputStream을 Byte 배열로 변환하고, 배열을 패킷에 담음 */
 			byte[] sendBuf = byteStream.toByteArray();
 			DatagramPacket packet = new DatagramPacket(sendBuf, sendBuf.length, address, desPort);
-			int byteCount = packet.getLength();
-			dSock.send(packet);
+			
+			/* 서버로 ACK 패킷 전송 */
+			udpSocket.send(packet);
 			os.close();
 		} catch (UnknownHostException e) {
 			System.err.println("Exception:  " + e);
@@ -168,54 +171,22 @@ public class UDPClient {
 			e.printStackTrace();
 		}
 	}
-
-	public void recieveAndSend() {
+	
+	/* 서버로부터 Data 수신 메서드 */
+	public static Object recvPacketFromServer(DatagramSocket dataSocket) {
 		try {
-			DatagramSocket s = new DatagramSocket();
-
-			byte[] buf = new byte[1000];
-			DatagramPacket dp = new DatagramPacket(buf, buf.length);
-
-			InetAddress hostAddress = InetAddress.getByName("localhost");
-			while (true) {
-				BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in));
-				String outMessage = stdin.readLine();
-
-				if (outMessage.equals("bye"))
-					break;
-				String outString = "Client say: " + outMessage;
-				buf = outString.getBytes();
-
-				DatagramPacket out = new DatagramPacket(buf, buf.length, hostAddress, PORT);
-				s.send(out);
-
-				s.receive(dp);
-				String rcvd = "rcvd from " + dp.getAddress() + ", " + dp.getPort() + ": "
-						+ new String(dp.getData(), 0, dp.getLength());
-				System.out.println(rcvd);
-			}
-
-		} catch (SocketException e) {
-			e.printStackTrace();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-
-	}
-
-	public static Object recvObjFrom(DatagramSocket dSock) {
-		try {
-			// DatagramSocket dSock = new DatagramSocket(PORT);
+			/* Byte 배열과 패킷 매핑 */
 			byte[] recvBuf = new byte[5000];
 			DatagramPacket packet = new DatagramPacket(recvBuf, recvBuf.length);
-			dSock.receive(packet);
-			int byteCount = packet.getLength();
+			dataSocket.receive(packet);
+			
+			/* Byte 배열에서 스트림을 통해 Object 추출 */
 			ByteArrayInputStream byteStream = new ByteArrayInputStream(recvBuf);
 			ObjectInputStream is = new ObjectInputStream(new BufferedInputStream(byteStream));
 			Object o = is.readObject();
 			is.close();
+			
+			/* 추출한 Object(패킷) 리턴 */
 			return (o);
 		} catch (IOException e) {
 			System.err.println("Exception:  " + e);
@@ -225,6 +196,8 @@ public class UDPClient {
 		}
 		return (null);
 	}
+
+
 	
 	
 	/*

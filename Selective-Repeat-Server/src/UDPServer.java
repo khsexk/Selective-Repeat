@@ -261,7 +261,7 @@ public class UDPServer {
 	/* 패킷 전송 메서드 */
 	public static void sendObjectToClient(Object o, InetAddress address, int desPort, DatagramSocket dataSocket) {
 		try {
-			/* 패킷 데이터 직렬화를 위해 ByteArrayOutputStream과 ObjectOutputStream 사용*/
+			/* 패킷 데이터 직렬화를 위해 ByteArrayOutputStream과 ObjectOutputStream 사용 */
 			ByteArrayOutputStream byteStream = new ByteArrayOutputStream(5000);
 			ObjectOutputStream os = new ObjectOutputStream(new BufferedOutputStream(byteStream));
 			
@@ -269,7 +269,7 @@ public class UDPServer {
 			os.writeObject(o);
 			os.flush();
 			
-			/* ByteArrayOutputStream을 Byte 배열에 담고, 배열을 패킷에 담음 
+			/* ByteArrayOutputStream을 Byte 배열로 변환하고, 배열을 패킷에 담음 
 			 * 패킷 전송
 			 */
 			byte[] sendBuf = byteStream.toByteArray();
@@ -387,35 +387,5 @@ public class UDPServer {
 			e.printStackTrace();
 		}
 		return (null);
-	}
-	
-
-
-	public static void scanAndSend() {
-		byte[] buf = new byte[1000];
-		DatagramPacket dgp = new DatagramPacket(buf, buf.length);
-		DatagramSocket sk;
-
-		try {
-			sk = new DatagramSocket(PORT);
-			System.out.println("  Server started");
-			while (true) {
-				sk.receive(dgp);
-				String rcvd = new String(dgp.getData(), 0, dgp.getLength()) + ", from address: " + dgp.getAddress()
-						+ ", port: " + dgp.getPort();
-				System.out.println(rcvd);
-
-				BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in));
-				String outMessage = stdin.readLine();
-				buf = ("Server say: " + outMessage).getBytes();
-				DatagramPacket out = new DatagramPacket(buf, buf.length, dgp.getAddress(), dgp.getPort());
-				sk.send(out);
-			}
-		} catch (SocketException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-
 	}
 }
