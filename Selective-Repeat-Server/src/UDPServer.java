@@ -20,11 +20,13 @@ public class UDPServer {
 
 	// default configuration value
 	static int PORT = 9999;	// Server Port Number
-	static int pipeLineNum = 3;
-	static int window = 4;
 	static int cwnd = 1;
 	static int dupACKcount = 0;	// 중복 ACK
 	static int ssthreash = 5;
+	
+	static int pipeLineNum = 3;
+	static int window = 4;
+	static int base = 0;
 
 	static boolean ackPackets[];	// 각 패킷에 대한 Index별 Ack
 	static int currentPackNo = 0;	// next packet to be sent
@@ -55,7 +57,8 @@ public class UDPServer {
 			udpServer = new DatagramSocket(PORT);
 			System.out.println("  🖥 UDP Server Starts!");
 			
-			while(true) {
+			boolean gns = true;
+			while(gns==true) {
 				/* Client의 접속을 기다리는중 */
 				System.out.println("  Waiting for Client Request ...\n");
 				
@@ -82,9 +85,9 @@ public class UDPServer {
 					System.out.println("└────────────────────────────────┘\n");
 					System.out.println("**********************************");
 					System.out.println("**********************************");
-					System.out.println("              전송시작!             \n");
+					System.out.println("              전송시작!             ");
 					System.out.println("**********************************");
-					System.out.println("**********************************");
+					System.out.println("**********************************\n");
 				} catch (FileNotFoundException e) {
 					System.out.println(">>> 초기 버퍼");
 					printBuf(0);
@@ -94,8 +97,8 @@ public class UDPServer {
 
 				/* Selective Repeat 접근 방식을 사용하여 File 전송 */
 				selctiveRepeatARQ(fileContent, dataPacket, udpServer);
-
-				System.out.println("  file is sent");
+				gns = false;
+				System.out.println("서버를 종료합니다");
 			}	// while
 		} catch (SocketException e) {
 			e.printStackTrace();
@@ -160,12 +163,13 @@ public class UDPServer {
 		sendNewPackets(dgp, sk);
 
 		while (true) {
-			System.out.println("  waiting for ack");
 			AckPacket packet = getAck(sk);
 			System.out.println("  Ack recieved");
 
 			// stoping condition
 			if (packet.ackno == numberOfPackets - 1) {
+				System.out.println("<<<<<<< new ack: " + packet.ackno);
+				System.out.println("파일 전송이 완료되어 남은 타이머를 모두 제거합니다.");
 				killTimers();
 				return;
 			}
@@ -178,23 +182,34 @@ public class UDPServer {
 				/* 중복 ACK인지 확인 */
 				if (isDuplicateAck(packet)) {
 					dupACKcount++;
-					System.out.println("  duplicat ack: " + packet.ackno);
+					System.out.println("<<<<<<< 중복 ACK 수신: " + packet.ackno);
 					if (dupACKcount == 3) {
 						ssthreash = cwnd / 2;
 						cwnd = ssthreash + 3;
-						sendMissingPacket(dgp, sk, packet.ackno);
+						re_SendPacket(dgp, sk, packet.ackno);
 					} else if (dupACKcount > 3) {
 						cwnd++;
 						sendNewPackets(dgp, sk);
 					}
 				} else {
-					System.out.println("  new ack: " + packet.ackno);
-					// new ack
+					System.out.println("<<<<<<< new ack: " + packet.ackno);
 
 					dupACKcount = 0;
 
 					ackAllPacketsBefore(packet.ackno);
-
+					
+					//
+					for(int i=0 ; i<ackPackets.length ; i++) {
+						if(ackPackets[i] == false) break;
+						if(base < 5)
+							base++;
+					}
+					if(packet.ackno > 4) 
+						printBuf(5);
+					else
+						printBuf(packet.ackno + 1);
+					//
+					
 					if (dupACKcount >= 3) {
 						cwnd = ssthreash;
 					} else {
@@ -213,14 +228,13 @@ public class UDPServer {
 	
 	/* 파이프라인 방식으로 패킷 전송 메서드 */
 	public static void sendNewPackets(DatagramPacket dataPacket, DatagramSocket socket) {
-		System.out.println("💌💌💌💌💌 Pipe Line Start 💌💌💌💌💌\n");
 		for (int i = 0; i < cwnd; i++) {
 			/* 보낼 패킷의 순서번호가 패킷의 수 이상일 때 모두 전송된 것이므로 return */
 			if (currentPackNo >= numberOfPackets)	
 				return;
 			
 			/* 패킷 매핑 메서드 호출 */
-			System.out.println("┌────────── Send Packet ─────────┐");
+			System.out.println(">>>>>>> Send Packet: "+ currentPackNo);
 			sendPacket(dataPacket, socket, currentPackNo);
 
 			/* Timer 객체를 상속받아 만든 Timer를 패킷 순서번호에 따라 생성하고, 해쉬에 삽입 */
@@ -233,12 +247,10 @@ public class UDPServer {
 			// 패킷을 선송했으므로 패킷 순서번호 1만큼 증가
 			currentPackNo++;
 		}
-		System.out.println("💌💌💌💌 Pipe Line Finish 💌💌💌💌💌\n");
 	}
 	
 	/* 패킷과 순서번호로 Packet 생성 및 send()를 포함한 메서드 sendObjectToClient() 호출 */
 	public static void sendPacket(DatagramPacket dataPacket, DatagramSocket socket, int packetNo) {
-		sb = new StringBuilder();
 		int size;
 		
 		/* 마지막 패킷일 경우 if문, 아닐 경우 else문에 들어가 전송할 패킷의 size 결정 */
@@ -246,12 +258,9 @@ public class UDPServer {
 			size = fileContent.length - packetNo * chunkSize;
 		else
 			size = chunkSize;
-
-		sb.append("│─────────── Seq No: ").append(packetNo).append(" ──────────│\n");
-		sb.append("│────────── Size: ").append(size).append("Byte ─────────│\n");
-		sb.append("└────────────────────────────────┘");
-		System.out.println(sb.toString());
-		System.out.println("           From " + (packetNo * chunkSize) + " To " + (packetNo * chunkSize + size) + "\n");
+		
+		
+		System.out.println("→→→→→ From " + (packetNo * chunkSize) + "byte To " + (packetNo * chunkSize + size) + "byte\n");
 		
 		/* 전송할 패킷을 byte 배열에 저장 */
 		byte[] part = new byte[size];
@@ -263,7 +272,7 @@ public class UDPServer {
 		if (lossPacket())
 			sendObjectToClient(packet, dataPacket.getAddress(), dataPacket.getPort(), socket);
 		else
-			System.out.println("      (😰 " + packetNo + "번 Packet 손실 😰)");
+			System.out.println("                                         Warning: "+packetNo + "번 패킷 손실");
 	}
 	
 	/* 손실이 일어날 확률 결정 메서드 */
@@ -325,16 +334,17 @@ public class UDPServer {
 	}
 	
 	/*  */
-	private static void sendMissingPacket(DatagramPacket dgp, DatagramSocket sk, int ackno) {
+	private static void re_SendPacket(DatagramPacket dgp, DatagramSocket sk, int ackno) {
 		hashTimers.remove(ackno + 1).interrupt();
 
 		Timer timer = new Timer(ackno + 1, dgp, sk, timeOutDuration);
 		hashTimers.put(ackno + 1, timer);
 		
-		System.out.println("┌────     Re-Send Packet     ────┐");
-		System.out.println("│──── Because Of Packet Loss ────│");
+		System.out.println(">>>>>>> Re-Send Packet: " + (ackno + 1));
+		System.out.println(">>>>>>> 이유: 데이터 패킷 손실");
 		sendPacket(dgp, sk, ackno + 1);
 		timer.start();
+		System.out.println(">>>>>>> "+ (ackno + 1) + "번 타이머 시작");
 	}
 	
 	/*  */
@@ -347,21 +357,18 @@ public class UDPServer {
 	/* TimeOut 발생 */
 	public static void handleTimeOut(int packetNo, DatagramPacket dgp, DatagramSocket sk) {
 		try {
-			System.out.println("  handle time out: " + packetNo);
+			System.out.println("                                         Warning: " + packetNo + "번 타이머 TimeOut");
+			
 			mutex.acquire();
-
-			// System.out.println("acquire mutex timeout packet: " + packetNo);
-			// using sophomore
 			ssthreash = cwnd / 2;
 			cwnd = 1;
 			dupACKcount = 0;
 			
-			System.out.println("┌──────   Re-Send Packet   ──────┐");
-			System.out.println("│────── Because Of TimeOut ──────│");
+			System.out.println(">>>>>>> Re-Send Packet: " + packetNo);
+			System.out.println(">>>>>>> 이유: TimeOut");
 			sendPacket(dgp, sk, packetNo);
 
 			mutex.release();
-			// System.out.println("release mutex timeout packet: " + packetNo);
 
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -370,7 +377,7 @@ public class UDPServer {
 
 	/*  */
 	public static AckPacket getAck(DatagramSocket dSock) {
-		Object recievedObj = recvObjFrom(dSock);
+		Object recievedObj = recvAckFromClient(dSock);
 
 		if (recievedObj != null) {
 			try {
@@ -383,18 +390,20 @@ public class UDPServer {
 		return null;
 	}
 	
-	/*  */
-	public static Object recvObjFrom(DatagramSocket dSock) {
+	/* Client로부터 ACK 패킷을 받는 메서드 */
+	public static Object recvAckFromClient(DatagramSocket dSock) {
 		try {
-			// DatagramSocket dSock = new DatagramSocket(PORT);
+			/* byte 배열을 패킷과 매핑하여 recv */
 			byte[] recvBuf = new byte[5000];
 			DatagramPacket packet = new DatagramPacket(recvBuf, recvBuf.length);
 			dSock.receive(packet);
-
+			
+			/* 받은 패킷을 스트림을 이용하여 Object로 변환 후 리턴 */
 			ByteArrayInputStream byteStream = new ByteArrayInputStream(recvBuf);
 			ObjectInputStream is = new ObjectInputStream(new BufferedInputStream(byteStream));
 			Object o = is.readObject();
 			is.close();
+			
 			return (o);
 		} catch (SocketTimeoutException e) {
 			// timeout exception.
@@ -417,15 +426,17 @@ public class UDPServer {
 	 *  윈도우 크기는 4로 가정 ( 패킷 순서번호(8) / 2 ) 
 	 */
 	static void printBuf(int base) {
-	      System.out.println("┌───────────────────────────────────┐");
-	      System.out.println("│ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │");
-	      System.out.println("└───────────────────────────────────┘");
-	      
-	      if(base > 0) {
-	          for(int i=0; i<base; i++) {
-	        	  System.out.print("    ");
-	          }
-	      }
-	      System.out.println("└───────────────┘\n");
+		sb = new StringBuilder();
+		
+		sb.append("┌───────────────────────────────────┐\n")
+		  .append("│ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │\n")
+		  .append("└───────────────────────────────────┘\n");
+		      
+		if(base > 0) {
+			for(int i=0; i<base; i++) 
+				sb.append("    ");
+		}
+		sb.append("└───────────────┘\n");
+		System.out.println(sb.toString());
 	}
 }

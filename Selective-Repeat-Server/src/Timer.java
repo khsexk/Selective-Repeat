@@ -23,7 +23,7 @@ public class Timer extends Thread {
 			}
 		} catch (InterruptedException e) {
 			// e.printStackTrace();
-			System.out.println("  🔪 Kill timer of packet: " + packetNo);
+			System.out.println("                                         🔪🔪🔪 Kill timer of packet: " + packetNo);
 		}
 	}
 }
