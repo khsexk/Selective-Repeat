@@ -1,4 +1,4 @@
-# Java를 이용해 구현한 Selective Repeat ARQ with UDP Socket
+# Selective Repeat ARQ with UDP Socket
   
   
 > ### **1. Selective Repeat ARG란?**
