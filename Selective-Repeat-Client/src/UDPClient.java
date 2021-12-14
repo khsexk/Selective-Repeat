@@ -110,12 +110,14 @@ public class UDPClient {
 			int currentPacket = 0;	// 받아야 할 패킷 순서번호
 			DataPacket packet;
 			AckPacket ackPacket;
-
+			
 			while (currentPacket < numberOfPackets) {
+				
 				if (hashPackets.containsKey(currentPacket)) {
 					packet = hashPackets.remove(currentPacket++);
 					fos.write(packet.data);
 				} 
+				
 				else {
 					/* ACK 전송 */
 					if (currentPacket != 0) {

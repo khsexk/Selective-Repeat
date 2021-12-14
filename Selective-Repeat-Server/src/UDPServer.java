@@ -272,7 +272,8 @@ public class UDPServer {
 		if (lossPacket())
 			sendObjectToClient(packet, dataPacket.getAddress(), dataPacket.getPort(), socket);
 		else
-			System.out.println("                                         Warning: "+packetNo + "번 패킷 손실");
+			System.out.println("                                         "
+					+ "                                         Warning: "+packetNo + "번 패킷 손실");
 	}
 	
 	/* 손실이 일어날 확률 결정 메서드 */
@@ -357,7 +358,8 @@ public class UDPServer {
 	/* TimeOut 발생 */
 	public static void handleTimeOut(int packetNo, DatagramPacket dgp, DatagramSocket sk) {
 		try {
-			System.out.println("                                         Warning: " + packetNo + "번 타이머 TimeOut");
+			System.out.println("                                         "
+					+ "                                         Warning: " + packetNo + "번 타이머 TimeOut");
 			
 			mutex.acquire();
 			ssthreash = cwnd / 2;
@@ -428,15 +430,15 @@ public class UDPServer {
 	static void printBuf(int base) {
 		sb = new StringBuilder();
 		
-		sb.append("┌───────────────────────────────────┐\n")
-		  .append("│ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │\n")
-		  .append("└───────────────────────────────────┘\n");
+		sb.append("                                         ┌───────────────────────────────────┐\n")
+		  .append("                                         │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │\n")
+		  .append("                                         └───────────────────────────────────┘\n");
 		      
 		if(base > 0) {
 			for(int i=0; i<base; i++) 
 				sb.append("    ");
 		}
-		sb.append("└───────────────┘\n");
+		sb.append("                                         └───────────────┘\n");
 		System.out.println(sb.toString());
 	}
 }
