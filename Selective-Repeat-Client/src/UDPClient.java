@@ -33,7 +33,6 @@ public class UDPClient {
 	static HashMap<Integer, DataPacket> hashPackets;
 
 	public static void main(String[] args) {
-
 		try {
 			DatagramSocket udpSocket = new DatagramSocket();
 			System.out.println("UDP Client 소켓이 생성되었습니다");
@@ -166,12 +165,8 @@ public class UDPClient {
 				}
 				dynamicWindow = 3;
 			} // while
+			
 			fos.close();
-			/*
-			 * 마지막 패킷에 대한 ACK 전송 System.out.println("send ack: " + (numberOfPackets - 1));
-			 * printBuf(5); ackPacket = new AckPacket(0, numberOfPackets - 1);
-			 * sendAckToServer(ackPacket, dgp.getAddress(), dgp.getPort(), udpSocket);
-			 */
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
