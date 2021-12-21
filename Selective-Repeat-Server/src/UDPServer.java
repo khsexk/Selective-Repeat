@@ -247,7 +247,7 @@ public class UDPServer {
 		
 		
 		/* lossPacket() 메서드를 통해 20% 확률로 패킷 손실 발생 → Server는 모름 */
-		/*if (lossPacket())  */
+		/* if (lossPacket()) */
 		if(packetNo != 2 || makingError==0) {
 			sendObjectToClient(packet, dataPacket.getAddress(), dataPacket.getPort(), socket);
 		}
