@@ -9,4 +9,4 @@
  
  * * *
    
- [보고서 참고](https://github.com/khsexk/Selective-Repeat/blob/main/Documents/%EC%BB%B4%EB%84%A4_%EB%B3%B4%EA%B3%A0%EC%84%9C.hwp)
+- [보고서 참고](https://github.com/khsexk/Selective-Repeat/blob/main/Documents/%EC%BB%B4%EB%84%A4_%EB%B3%B4%EA%B3%A0%EC%84%9C.hwp)
